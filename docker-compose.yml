@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: mcpauth
+      POSTGRES_USER: mcpauth
+      POSTGRES_PASSWORD: mcpauth
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcpauth"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  auth-server:
+    build: .
+    command: ["uv", "run", "python", "-m", "auth_server"]
+    ports:
+      - "9000:9000"
+    environment:
+      AUTH_SERVER_URL: "http://localhost:9000"
+      DATABASE_URL: "postgresql://mcpauth:mcpauth@postgres:5432/mcpauth"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  resource-server:
+    build: .
+    command: ["uv", "run", "python", "-m", "resource_server"]
+    ports:
+      - "9001:9001"
+    environment:
+      AUTH_SERVER_URL: "http://auth-server:9000"
+      INTROSPECTION_URL: "http://auth-server:9000/introspect"
+      RESOURCE_SERVER_URL: "http://localhost:9001"
+    depends_on:
+      - auth-server
+
+  example-client:
+    build: .
+    command: ["uv", "run", "python", "-m", "example_client"]
+    environment:
+      AUTH_SERVER_URL: "http://auth-server:9000"
+      RESOURCE_SERVER_URL: "http://resource-server:9001"
+    depends_on:
+      - auth-server
+      - resource-server
+    profiles:
+      - demo
