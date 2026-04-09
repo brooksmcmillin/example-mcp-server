@@ -29,7 +29,7 @@ services:
     ports:
       - "9001:9001"
     environment:
-      AUTH_SERVER_URL: "http://auth-server:9000"
+      AUTH_SERVER_PUBLIC_URL: "http://localhost:9000"
       INTROSPECTION_URL: "http://auth-server:9000/introspect"
       RESOURCE_SERVER_URL: "http://localhost:9001"
     depends_on:

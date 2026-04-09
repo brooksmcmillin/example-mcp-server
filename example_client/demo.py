@@ -30,6 +30,8 @@ async def register_client(http: httpx.AsyncClient) -> tuple[str, str]:
         json={
             "client_name": "example-demo",
             "scope": "notes:read notes:write",
+            "grant_types": ["client_credentials"],
+            "token_endpoint_auth_method": "client_secret_post",
         },
     )
     resp.raise_for_status()

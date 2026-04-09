@@ -15,8 +15,10 @@ from pydantic import AnyHttpUrl
 # Configuration
 # ---------------------------------------------------------------------------
 
-AUTH_SERVER_URL = os.environ.get("AUTH_SERVER_URL", "http://localhost:9000")
-INTROSPECTION_URL = os.environ.get("INTROSPECTION_URL", f"{AUTH_SERVER_URL.rstrip('/')}/introspect")
+AUTH_SERVER_PUBLIC_URL = os.environ.get("AUTH_SERVER_PUBLIC_URL", "http://localhost:9000")
+INTROSPECTION_URL = os.environ.get(
+    "INTROSPECTION_URL", f"{AUTH_SERVER_PUBLIC_URL.rstrip('/')}/introspect"
+)
 RESOURCE_SERVER_URL = os.environ.get("RESOURCE_SERVER_URL", "http://localhost:9001")
 
 # ---------------------------------------------------------------------------
@@ -34,7 +36,7 @@ app = FastMCP(
     stateless_http=True,
     token_verifier=verifier,
     auth=AuthSettings(
-        issuer_url=AnyHttpUrl(AUTH_SERVER_URL),
+        issuer_url=AnyHttpUrl(AUTH_SERVER_PUBLIC_URL),
         required_scopes=["notes:read"],
         resource_server_url=AnyHttpUrl(RESOURCE_SERVER_URL),
     ),
@@ -43,7 +45,7 @@ app = FastMCP(
 register_oauth_discovery_endpoints(
     app,
     server_url=RESOURCE_SERVER_URL,
-    auth_server_public_url=AUTH_SERVER_URL,
+    auth_server_public_url=AUTH_SERVER_PUBLIC_URL,
     scopes=["notes:read", "notes:write"],
 )
 
