@@ -18,7 +18,7 @@ import urllib.parse
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from mcp_auth_framework import (
+from mcp_authflow import (
     MemoryTokenStorage,
     SlidingWindowRateLimiter,
     TokenStorage,
@@ -474,7 +474,7 @@ async def lifespan(_app: Starlette) -> AsyncGenerator[None]:
     global storage
     new_storage: TokenStorage
     if DATABASE_URL:
-        from mcp_auth_framework import PostgresTokenStorage
+        from mcp_authflow import PostgresTokenStorage
 
         new_storage = PostgresTokenStorage(database_url=DATABASE_URL)
     else:
