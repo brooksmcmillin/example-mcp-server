@@ -1,6 +1,6 @@
 # Example MCP Server with OAuth 2.0
 
-A complete, runnable example of an OAuth-protected [MCP](https://modelcontextprotocol.io) server using [mcp-authflow](https://github.com/brooksmcmillin/mcpauth) and [mcp-authflow-resource](https://github.com/brooksmcmillin/mcpauth-resource).
+A complete, runnable example of an OAuth-protected [MCP](https://modelcontextprotocol.io) server using [mcp-authflow](https://github.com/brooksmcmillin/mcp-authflow) and [mcp-authflow-resource](https://github.com/brooksmcmillin/mcp-authflow-resource).
 
 **What's inside:**
 

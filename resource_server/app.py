@@ -8,7 +8,7 @@ import os
 
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp.server import FastMCP
-from mcp_resource_framework import IntrospectionTokenVerifier, register_oauth_discovery_endpoints
+from mcp_authflow_resource import IntrospectionTokenVerifier, register_oauth_discovery_endpoints
 from pydantic import AnyHttpUrl
 
 # ---------------------------------------------------------------------------

@@ -9,8 +9,8 @@ authors = [
     { name = "Brooks McMillin" },
 ]
 dependencies = [
-    "mcp-authflow[postgres]>=0.1.0",
-    "mcp-authflow-resource>=0.1.0",
+    "mcp-authflow[postgres]>=0.2.0",
+    "mcp-authflow-resource>=0.2.0",
     "mcp>=1.24.0",
     "starlette>=0.40.0",
     "uvicorn>=0.30.0",
