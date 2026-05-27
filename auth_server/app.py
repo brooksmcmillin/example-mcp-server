@@ -375,10 +375,10 @@ async def _client_credentials_grant(form: FormData) -> JSONResponse:
     if not client_id or not client_secret:
         return invalid_client("client_id and client_secret are required")
 
-    if not token_limiter.is_allowed(client_id):
+    if not await token_limiter.is_allowed(client_id):
         return rate_limit_exceeded(
             "Too many token requests",
-            retry_after=token_limiter.get_retry_after(client_id),
+            retry_after=await token_limiter.get_retry_after(client_id),
         )
 
     client = registered_clients.get(client_id)
@@ -469,6 +469,41 @@ async def metadata_handler(request: Request) -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 
+# mcp-authflow's PostgresTokenStorage operates on these tables but does not
+# own their schema -- creating them is the consuming application's job. This is
+# the DDL its access/refresh-token queries expect.
+TOKEN_SCHEMA_DDL = """
+CREATE TABLE IF NOT EXISTS mcp_access_tokens (
+    token       TEXT PRIMARY KEY,
+    client_id   TEXT NOT NULL,
+    scopes      TEXT NOT NULL DEFAULT '',
+    resource    TEXT,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    user_id     INTEGER
+);
+CREATE TABLE IF NOT EXISTS mcp_refresh_tokens (
+    token       TEXT PRIMARY KEY,
+    client_id   TEXT NOT NULL,
+    scopes      TEXT NOT NULL DEFAULT '',
+    resource    TEXT,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    user_id     INTEGER
+);
+"""
+
+
+async def _ensure_token_schema(database_url: str) -> None:
+    import asyncpg
+
+    conn = await asyncpg.connect(database_url)
+    try:
+        await conn.execute(TOKEN_SCHEMA_DDL)
+    finally:
+        await conn.close()
+
+
 @asynccontextmanager
 async def lifespan(_app: Starlette) -> AsyncGenerator[None]:
     global storage
@@ -476,6 +511,7 @@ async def lifespan(_app: Starlette) -> AsyncGenerator[None]:
     if DATABASE_URL:
         from mcp_authflow import PostgresTokenStorage
 
+        await _ensure_token_schema(DATABASE_URL)
         new_storage = PostgresTokenStorage(database_url=DATABASE_URL)
     else:
         new_storage = MemoryTokenStorage()

@@ -32,6 +32,9 @@ services:
       AUTH_SERVER_PUBLIC_URL: "http://localhost:9000"
       INTROSPECTION_URL: "http://auth-server:9000/introspect"
       RESOURCE_SERVER_URL: "http://localhost:9001"
+      # In-cluster clients (the demo container) reach this service by its compose
+      # name; host-based MCP clients use localhost. Trust both.
+      MCP_ALLOWED_HOSTS: "localhost:*,127.0.0.1:*,[::1]:*,resource-server:*"
     depends_on:
       - auth-server
 
