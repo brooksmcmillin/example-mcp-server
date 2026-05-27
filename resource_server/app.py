@@ -8,6 +8,7 @@ import os
 
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp.server import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp_authflow_resource import IntrospectionTokenVerifier, register_oauth_discovery_endpoints
 from pydantic import AnyHttpUrl
 
@@ -20,6 +21,16 @@ INTROSPECTION_URL = os.environ.get(
     "INTROSPECTION_URL", f"{AUTH_SERVER_PUBLIC_URL.rstrip('/')}/introspect"
 )
 RESOURCE_SERVER_URL = os.environ.get("RESOURCE_SERVER_URL", "http://localhost:9001")
+
+# FastMCP's streamable-HTTP transport enables DNS-rebinding protection and only
+# accepts requests whose Host header is in this allowlist. Any deployment served
+# under a real hostname (or, here, the Docker Compose service name clients use to
+# reach it) must list that host. Defaults cover the local-loopback case.
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get("MCP_ALLOWED_HOSTS", "localhost:*,127.0.0.1:*,[::1]:*").split(",")
+    if h.strip()
+]
 
 # ---------------------------------------------------------------------------
 # OAuth setup
@@ -35,6 +46,10 @@ app = FastMCP(
     instructions="A simple notes API protected by OAuth 2.0. Requires a valid access token.",
     stateless_http=True,
     token_verifier=verifier,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=ALLOWED_HOSTS,
+    ),
     auth=AuthSettings(
         issuer_url=AnyHttpUrl(AUTH_SERVER_PUBLIC_URL),
         required_scopes=["notes:read"],

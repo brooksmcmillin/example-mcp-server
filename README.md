@@ -272,6 +272,7 @@ python -m example_client
 | `AUTH_SERVER_PUBLIC_URL` | `http://localhost:9000` | Auth server URL for client-facing discovery metadata |
 | `INTROSPECTION_URL` | `{AUTH_SERVER_PUBLIC_URL}/introspect` | Token introspection endpoint (can use internal URL) |
 | `RESOURCE_SERVER_URL` | `http://localhost:9001` | Public URL of this server |
+| `MCP_ALLOWED_HOSTS` | `localhost:*,127.0.0.1:*,[::1]:*` | Comma-separated `Host` header allowlist for FastMCP's DNS-rebinding protection. Add the hostname clients use to reach the server (a reverse-proxy domain, or here the Compose service name). `host:*` allows any port. |
 
 ## License
 
