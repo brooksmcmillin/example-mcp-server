@@ -30,7 +30,7 @@ from mcp_authflow import (
 from starlette.applications import Starlette
 from starlette.datastructures import FormData
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 # ---------------------------------------------------------------------------
@@ -53,6 +53,10 @@ storage: TokenStorage | None = None
 # In-memory registries. Production servers should use a database.
 registered_clients: dict[str, dict[str, str | list[str] | int | None]] = {}
 authorization_codes: dict[str, dict[str, str | list[str] | int]] = {}
+
+# Single-use CSRF tokens for the consent form: token -> expiry timestamp.
+consent_csrf_tokens: dict[str, int] = {}
+CSRF_TOKEN_TTL = 600  # 10 minutes
 
 # Rate limiter: 60 requests per 5 minutes per client
 token_limiter = SlidingWindowRateLimiter(requests_per_window=60, window_seconds=300)
@@ -194,6 +198,7 @@ CONSENT_HTML = """\
   <input type="hidden" name="state" value="{state}">
   <input type="hidden" name="code_challenge" value="{code_challenge}">
   <input type="hidden" name="code_challenge_method" value="{code_challenge_method}">
+  <input type="hidden" name="csrf_token" value="{csrf_token}">
   <div class="buttons">
     <button type="submit" name="action" value="approve">Approve</button>
     <button type="submit" name="action" value="deny">Deny</button>
@@ -203,7 +208,7 @@ CONSENT_HTML = """\
 </html>"""
 
 
-async def authorize_handler(request: Request) -> HTMLResponse | JSONResponse | RedirectResponse:
+async def authorize_handler(request: Request) -> Response:
     """RFC 6749 section 4.1: Authorization endpoint.
 
     GET  -- validate parameters and show consent form.
@@ -247,6 +252,10 @@ async def authorize_handler(request: Request) -> HTMLResponse | JSONResponse | R
     requested_scopes = set(scope.split()) if scope else allowed_scopes
     scopes = sorted(requested_scopes & allowed_scopes) or sorted(allowed_scopes)
 
+    # Issue a single-use CSRF token bound to this consent form.
+    csrf_token = secrets.token_urlsafe(32)
+    consent_csrf_tokens[csrf_token] = int(time.time()) + CSRF_TOKEN_TTL
+
     scope_items = "".join(f"<li>{html.escape(s)}</li>" for s in scopes)
     page = CONSENT_HTML.format(
         client_name=html.escape(client_name),
@@ -256,13 +265,21 @@ async def authorize_handler(request: Request) -> HTMLResponse | JSONResponse | R
         state=html.escape(state),
         code_challenge=html.escape(code_challenge),
         code_challenge_method=html.escape(code_challenge_method),
+        csrf_token=html.escape(csrf_token),
         scope_items=scope_items,
     )
     return HTMLResponse(page)
 
 
-async def _authorize_post(request: Request) -> RedirectResponse:
-    """Process the consent form POST and redirect with an authorization code."""
+async def _authorize_post(request: Request) -> Response:
+    """Process the consent form POST and redirect with an authorization code.
+
+    Every security-relevant parameter is re-validated server-side here. The
+    GET handler's checks are not sufficient on their own: codes are only ever
+    minted on POST, and the form fields are fully attacker-controllable. Trusting
+    them would allow authorization-code injection / open redirect to an arbitrary
+    URI and scope escalation (CWE-601, CWE-285).
+    """
     form = await request.form()
     action = str(form.get("action", ""))
     client_id = str(form.get("client_id", ""))
@@ -271,17 +288,43 @@ async def _authorize_post(request: Request) -> RedirectResponse:
     state = str(form.get("state", ""))
     code_challenge = str(form.get("code_challenge", ""))
     code_challenge_method = str(form.get("code_challenge_method", ""))
+    csrf_token = str(form.get("csrf_token", ""))
+
+    # Verify the single-use CSRF token issued by the GET consent form. pop()
+    # consumes it; an absent/expired token defaults to 0 and is rejected.
+    if not csrf_token or consent_csrf_tokens.pop(csrf_token, 0) < time.time():
+        return invalid_request("Invalid or expired CSRF token")
+
+    # Re-validate the client and redirect URI. Never redirect to the submitted
+    # URI until it is confirmed registered for this client.
+    client = registered_clients.get(client_id)
+    if not client:
+        return invalid_client("Unknown client_id")
+
+    client_redirects = client.get("redirect_uris")
+    if not isinstance(client_redirects, list) or not any(
+        redirect_uri_matches(str(r), redirect_uri) for r in client_redirects
+    ):
+        return invalid_request("redirect_uri not registered for this client")
+
+    # PKCE is mandatory; reject anything that could be exchanged without S256.
+    if not code_challenge or code_challenge_method != "S256":
+        return invalid_request("PKCE with S256 is required")
 
     if action == "deny":
         qs = urllib.parse.urlencode({"error": "access_denied", "state": state})
         return RedirectResponse(f"{redirect_uri}?{qs}", status_code=302)
+
+    # Constrain granted scopes to the intersection of requested and allowed.
+    allowed_scopes = set(client["scopes"]) if isinstance(client["scopes"], list) else set()
+    granted_scopes = sorted(set(scope.split()) & allowed_scopes)
 
     # Generate single-use authorization code
     code = secrets.token_urlsafe(32)
     authorization_codes[code] = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
-        "scopes": scope.split(),
+        "scopes": granted_scopes,
         "code_challenge": code_challenge,
         "code_challenge_method": code_challenge_method,
         "expires_at": int(time.time()) + AUTH_CODE_TTL,
