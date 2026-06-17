@@ -165,7 +165,7 @@ curl -s -X POST http://localhost:9000/token \
 ### 3. Call MCP Tools with the Token
 
 ```bash
-npx @anthropic-ai/mcp-inspector \
+npx @modelcontextprotocol/inspector \
   --transport streamable-http \
   --url http://localhost:9001/mcp \
   --header "Authorization: Bearer YOUR_ACCESS_TOKEN"
