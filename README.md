@@ -166,9 +166,10 @@ curl -s -X POST http://localhost:9000/token \
 
 ```bash
 npx @modelcontextprotocol/inspector \
-  --transport streamable-http \
-  --url http://localhost:9001/mcp \
-  --header "Authorization: Bearer YOUR_ACCESS_TOKEN"
+  --cli http://localhost:9001/mcp \
+  --transport http \
+  --header "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  --method tools/list
 ```
 
 ### 4. See Rejection Without a Token
