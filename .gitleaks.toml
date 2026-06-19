@@ -1,0 +1,15 @@
+# gitleaks configuration
+# Extends the upstream default ruleset; only adds allowlist entries for files
+# that legitimately contain non-secret, secret-shaped strings.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Non-secrets that trip the generic rules"
+paths = [
+  # detect-secrets baseline stores SHA hashes of audited (non-)secrets, which
+  # match the generic-api-key rule. The baseline is the source of truth for
+  # what has already been triaged, so exclude it from gitleaks.
+  '''\.secrets\.baseline''',
+]
