@@ -23,6 +23,7 @@ dev = [
     "ruff>=0.2.0",
     "pyright>=1.1.400",
     "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
 ]
 
 [build-system]
@@ -38,6 +39,10 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.pyright]
 pythonVersion = "3.11"

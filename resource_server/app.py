@@ -6,7 +6,9 @@ via token introspection (RFC 7662).
 
 import os
 
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.fastmcp.server import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_authflow_resource import IntrospectionTokenVerifier, register_oauth_discovery_endpoints
@@ -75,6 +77,26 @@ _next_id: int = 1
 starlette_app = app.streamable_http_app()
 
 # ---------------------------------------------------------------------------
+# Per-tool scope enforcement
+# ---------------------------------------------------------------------------
+
+
+def _require_scope(scope: str) -> None:
+    """Enforce that the authenticated token carries ``scope``.
+
+    ``AuthSettings.required_scopes`` gates every request on ``notes:read``, but
+    that is the floor for *any* access -- it does not distinguish reads from
+    writes. Tool docstrings ("Requires scope: notes:write") are documentation,
+    not enforcement, so without this check a token holding only ``notes:read``
+    could call the write tools (broken function-level authorization, CWE-285).
+    Each write tool calls this to verify ``notes:write`` is actually granted.
+    """
+    token = get_access_token()
+    if token is None or scope not in token.scopes:
+        raise ToolError(f"insufficient_scope: this operation requires the '{scope}' scope")
+
+
+# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
 
@@ -100,6 +122,7 @@ async def get_note(note_id: str) -> str:
 @app.tool()
 async def create_note(title: str, content: str) -> str:
     """Create a new note. Requires scope: notes:write"""
+    _require_scope("notes:write")
     global _next_id
     note_id = str(_next_id)
     _next_id += 1
@@ -110,6 +133,7 @@ async def create_note(title: str, content: str) -> str:
 @app.tool()
 async def update_note(note_id: str, title: str | None = None, content: str | None = None) -> str:
     """Update an existing note. Requires scope: notes:write"""
+    _require_scope("notes:write")
     note = _notes.get(note_id)
     if not note:
         return f"Note {note_id} not found."
@@ -123,6 +147,7 @@ async def update_note(note_id: str, title: str | None = None, content: str | Non
 @app.tool()
 async def delete_note(note_id: str) -> str:
     """Delete a note by ID. Requires scope: notes:write"""
+    _require_scope("notes:write")
     if note_id not in _notes:
         return f"Note {note_id} not found."
     del _notes[note_id]
