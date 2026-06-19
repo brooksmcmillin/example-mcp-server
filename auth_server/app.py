@@ -17,6 +17,7 @@ import time
 import urllib.parse
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import cast
 
 from mcp_authflow import (
     MemoryTokenStorage,
@@ -371,7 +372,7 @@ async def _exchange_authorization_code(form: FormData) -> JSONResponse:
     if not code_data:
         return invalid_request("Invalid or expired authorization code")
 
-    if int(code_data["expires_at"]) < time.time():
+    if cast(int, code_data["expires_at"]) < time.time():
         return invalid_request("Authorization code expired")
 
     if code_data["client_id"] != client_id:
