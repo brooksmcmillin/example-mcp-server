@@ -8,6 +8,7 @@ CSRF token rather than trusting the submitted form fields.
 
 import re
 import urllib.parse
+from collections.abc import Iterator
 
 import pytest
 from starlette.testclient import TestClient
@@ -16,7 +17,7 @@ from auth_server import app as auth_app
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client() -> Iterator[TestClient]:
     auth_app.registered_clients.clear()
     auth_app.authorization_codes.clear()
     auth_app.consent_csrf_tokens.clear()
@@ -50,7 +51,9 @@ def _consent_form(client: TestClient, client_id: str, **overrides) -> dict[str, 
     }
     resp = client.get("/authorize", params=params)
     assert resp.status_code == 200
-    csrf = re.search(r'name="csrf_token" value="([^"]+)"', resp.text).group(1)
+    match = re.search(r'name="csrf_token" value="([^"]+)"', resp.text)
+    assert match is not None
+    csrf = match.group(1)
     form = {
         "action": "approve",
         "client_id": client_id,
@@ -128,7 +131,5 @@ def test_scope_escalation_is_constrained(client: TestClient) -> None:
     form = _consent_form(client, client_id, scope="notes:read notes:write")
     resp = client.post("/authorize", data=form, follow_redirects=False)
     assert resp.status_code == 302
-    code = urllib.parse.parse_qs(
-        urllib.parse.urlparse(resp.headers["location"]).query
-    )["code"][0]
+    code = urllib.parse.parse_qs(urllib.parse.urlparse(resp.headers["location"]).query)["code"][0]
     assert auth_app.authorization_codes[code]["scopes"] == ["notes:read"]
