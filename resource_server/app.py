@@ -24,6 +24,14 @@ INTROSPECTION_URL = os.environ.get(
 )
 RESOURCE_SERVER_URL = os.environ.get("RESOURCE_SERVER_URL", "http://localhost:9001")
 
+# Credentials this resource server presents to the auth server's /introspect
+# endpoint (RFC 7662 section 2.1). Must match the auth server's configured
+# introspection credentials; the defaults suit the localhost demo.
+INTROSPECTION_CLIENT_ID = os.environ.get("INTROSPECTION_CLIENT_ID", "resource-server")
+INTROSPECTION_CLIENT_SECRET = os.environ.get(
+    "INTROSPECTION_CLIENT_SECRET", "resource-server-secret"
+)
+
 # FastMCP's streamable-HTTP transport enables DNS-rebinding protection and only
 # accepts requests whose Host header is in this allowlist. Any deployment served
 # under a real hostname (or, here, the Docker Compose service name clients use to
@@ -41,6 +49,9 @@ ALLOWED_HOSTS = [
 verifier = IntrospectionTokenVerifier(
     introspection_endpoint=INTROSPECTION_URL,
     server_url=RESOURCE_SERVER_URL,
+    client_id=INTROSPECTION_CLIENT_ID,
+    client_secret=INTROSPECTION_CLIENT_SECRET,
+    client_auth_method="client_secret_basic",
 )
 
 app = FastMCP(

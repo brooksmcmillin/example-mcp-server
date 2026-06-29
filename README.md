@@ -229,7 +229,7 @@ docker compose --profile demo run --rm example-client
 | POST | `/register` | 7591 | Dynamic client registration |
 | GET/POST | `/authorize` | 6749 | Authorization endpoint (consent page) |
 | POST | `/token` | 6749 | Token endpoint (auth code + client credentials) |
-| POST | `/introspect` | 7662 | Token introspection |
+| POST | `/introspect` | 7662 | Token introspection (authenticates the caller; rate limited) |
 
 ## MCP Tools (Resource Server)
 
@@ -265,6 +265,8 @@ python -m example_client
 |----------|---------|-------------|
 | `AUTH_SERVER_URL` | `http://localhost:9000` | Public URL of the auth server |
 | `DATABASE_URL` | _(none, uses memory)_ | PostgreSQL connection string |
+| `INTROSPECTION_CLIENT_ID` | `resource-server` | Client id a protected resource must present on `/introspect` (RFC 7662 §2.1) |
+| `INTROSPECTION_CLIENT_SECRET` | `resource-server-secret` | Shared secret for `/introspect` callers. **Override in production** |
 
 ### Resource Server
 
@@ -274,6 +276,8 @@ python -m example_client
 | `INTROSPECTION_URL` | `{AUTH_SERVER_PUBLIC_URL}/introspect` | Token introspection endpoint (can use internal URL) |
 | `RESOURCE_SERVER_URL` | `http://localhost:9001` | Public URL of this server |
 | `MCP_ALLOWED_HOSTS` | `localhost:*,127.0.0.1:*,[::1]:*` | Comma-separated `Host` header allowlist for FastMCP's DNS-rebinding protection. Add the hostname clients use to reach the server (a reverse-proxy domain, or here the Compose service name). `host:*` allows any port. |
+| `INTROSPECTION_CLIENT_ID` | `resource-server` | Client id presented to the auth server's `/introspect` endpoint. Must match the auth server's value. |
+| `INTROSPECTION_CLIENT_SECRET` | `resource-server-secret` | Secret presented to `/introspect` (HTTP Basic). Must match the auth server's value. **Override in production** |
 
 ## License
 

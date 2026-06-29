@@ -22,6 +22,13 @@ from mcp.types import TextContent
 AUTH_SERVER_URL = os.environ.get("AUTH_SERVER_URL", "http://localhost:9000")
 RESOURCE_SERVER_URL = os.environ.get("RESOURCE_SERVER_URL", "http://localhost:9001")
 
+# /introspect now authenticates the caller (RFC 7662 section 2.1), so the demo
+# presents the same resource-server credentials the auth server expects.
+INTROSPECTION_CLIENT_ID = os.environ.get("INTROSPECTION_CLIENT_ID", "resource-server")
+INTROSPECTION_CLIENT_SECRET = os.environ.get(
+    "INTROSPECTION_CLIENT_SECRET", "resource-server-secret"
+)
+
 
 async def register_client(http: httpx.AsyncClient) -> tuple[str, str]:
     """Register an OAuth client and return (client_id, client_secret)."""
@@ -162,6 +169,7 @@ async def main() -> None:
         resp = await http.post(
             f"{AUTH_SERVER_URL}/introspect",
             data={"token": token},
+            auth=(INTROSPECTION_CLIENT_ID, INTROSPECTION_CLIENT_SECRET),
         )
         print(f"    {resp.json()}")
 
