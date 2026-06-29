@@ -45,6 +45,15 @@ AUTH_CODE_TTL = 600  # 10 minutes
 
 AVAILABLE_SCOPES = {"notes:read", "notes:write"}
 
+# Credentials the calling protected resource must present on /introspect
+# (RFC 7662 section 2.1). Treated as a shared secret between this server and the
+# resource server(s) that introspect tokens here. The defaults suit the
+# localhost demo; override BOTH in any real deployment.
+INTROSPECTION_CLIENT_ID = os.environ.get("INTROSPECTION_CLIENT_ID", "resource-server")
+INTROSPECTION_CLIENT_SECRET = os.environ.get(
+    "INTROSPECTION_CLIENT_SECRET", "resource-server-secret"
+)
+
 # ---------------------------------------------------------------------------
 # State (populated during lifespan)
 # ---------------------------------------------------------------------------
@@ -465,10 +474,61 @@ async def _client_credentials_grant(form: FormData) -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 
+def _introspection_caller_authenticated(request: Request, form: FormData) -> bool:
+    """Authenticate the calling protected resource (RFC 7662 section 2.1).
+
+    Accepts HTTP Basic credentials or ``client_id``/``client_secret`` form
+    parameters and compares them in constant time against the configured
+    introspection credentials. Both comparisons always run so the check does not
+    leak which half was wrong via timing.
+    """
+    client_id = ""
+    client_secret = ""
+
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(auth_header[len("Basic ") :]).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        client_id, _, client_secret = decoded.partition(":")
+    else:
+        client_id = str(form.get("client_id", ""))
+        client_secret = str(form.get("client_secret", ""))
+
+    id_ok = secrets.compare_digest(client_id, INTROSPECTION_CLIENT_ID)
+    secret_ok = secrets.compare_digest(client_secret, INTROSPECTION_CLIENT_SECRET)
+    return id_ok and secret_ok
+
+
 async def introspect_handler(request: Request) -> JSONResponse:
-    """RFC 7662: Token Introspection."""
+    """RFC 7662: Token Introspection.
+
+    The endpoint authenticates the calling protected resource (RFC 7662
+    section 2.1) and is rate limited. Unauthenticated or unknown callers receive
+    ``{"active": false}`` with no token metadata, so the endpoint cannot be used
+    as an oracle to probe token validity or harvest ``client_id``/scope data
+    (CWE-306).
+    """
     assert storage is not None
+
+    # Rate limit per caller before any token lookup, so the route cannot be
+    # hammered as a token oracle (or used to brute-force the introspection
+    # credentials) even by an authenticated caller.
+    rate_key = f"introspect:{request.client.host if request.client else 'unknown'}"
+    if not await token_limiter.is_allowed(rate_key):
+        return rate_limit_exceeded(
+            "Too many introspection requests",
+            retry_after=await token_limiter.get_retry_after(rate_key),
+        )
+
     form = await request.form()
+
+    # Reject unauthenticated callers with active:false rather than a 401 so no
+    # information (not even "this endpoint is protected for that token") leaks.
+    if not _introspection_caller_authenticated(request, form):
+        return JSONResponse({"active": False})
+
     token = str(form.get("token", ""))
 
     if not token:

@@ -19,6 +19,10 @@ services:
     environment:
       AUTH_SERVER_URL: "http://localhost:9000"
       DATABASE_URL: "postgresql://mcpauth:mcpauth@postgres:5432/mcpauth"
+      # Credentials the resource server must present on /introspect (RFC 7662).
+      # Shared with the resource-server service below; override in production.
+      INTROSPECTION_CLIENT_ID: "resource-server"
+      INTROSPECTION_CLIENT_SECRET: "dev-introspection-secret"  # pragma: allowlist secret
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,6 +36,9 @@ services:
       AUTH_SERVER_PUBLIC_URL: "http://localhost:9000"
       INTROSPECTION_URL: "http://auth-server:9000/introspect"
       RESOURCE_SERVER_URL: "http://localhost:9001"
+      # Must match the auth-server's introspection credentials above.
+      INTROSPECTION_CLIENT_ID: "resource-server"
+      INTROSPECTION_CLIENT_SECRET: "dev-introspection-secret"  # pragma: allowlist secret
       # In-cluster clients (the demo container) reach this service by its compose
       # name; host-based MCP clients use localhost. Trust both.
       MCP_ALLOWED_HOSTS: "localhost:*,127.0.0.1:*,[::1]:*,resource-server:*"
@@ -44,6 +51,9 @@ services:
     environment:
       AUTH_SERVER_URL: "http://auth-server:9000"
       RESOURCE_SERVER_URL: "http://resource-server:9001"
+      # Used by the demo's direct /introspect call; matches the servers above.
+      INTROSPECTION_CLIENT_ID: "resource-server"
+      INTROSPECTION_CLIENT_SECRET: "dev-introspection-secret"  # pragma: allowlist secret
     depends_on:
       - auth-server
       - resource-server
