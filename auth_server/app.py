@@ -73,6 +73,34 @@ token_limiter = SlidingWindowRateLimiter(requests_per_window=60, window_seconds=
 
 
 # ---------------------------------------------------------------------------
+# Rate-limiting helpers
+# ---------------------------------------------------------------------------
+
+
+def _client_ip(request: Request) -> str:
+    """Best-effort source IP for limiter keying when no client_id is available."""
+    return request.client.host if request.client else "unknown"
+
+
+async def _enforce_rate_limit(scope: str, identifier: str) -> JSONResponse | None:
+    """Apply the sliding-window limiter; return a 429 response if exceeded, else None.
+
+    Keys are namespaced per endpoint ``scope`` so traffic to one endpoint cannot
+    exhaust another's budget, and per ``identifier`` (a ``client_id`` when the
+    request carries one, otherwise the source IP). This throttles
+    registration flooding, authorization-code / PKCE brute force, and
+    introspection enumeration (CWE-307, CWE-799).
+    """
+    rate_key = f"{scope}:{identifier}"
+    if not await token_limiter.is_allowed(rate_key):
+        return rate_limit_exceeded(
+            "Too many requests",
+            retry_after=await token_limiter.get_retry_after(rate_key),
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
 # PKCE helpers
 # ---------------------------------------------------------------------------
 
@@ -107,6 +135,12 @@ def redirect_uri_matches(registered: str, requested: str) -> bool:
 
 async def register_handler(request: Request) -> JSONResponse:
     """RFC 7591: Dynamic Client Registration."""
+    # Throttle by source IP before doing any work, so the open registration
+    # endpoint cannot be flooded to exhaust the in-memory client registry.
+    limited = await _enforce_rate_limit("register", _client_ip(request))
+    if limited is not None:
+        return limited
+
     try:
         body = await request.json()
     except Exception:
@@ -224,6 +258,12 @@ async def authorize_handler(request: Request) -> Response:
     GET  -- validate parameters and show consent form.
     POST -- process the user's decision and redirect with an authorization code.
     """
+    # Throttle by source IP across both methods so the consent flow cannot be
+    # hammered to brute-force CSRF tokens or fish for valid client_ids.
+    limited = await _enforce_rate_limit("authorize", _client_ip(request))
+    if limited is not None:
+        return limited
+
     if request.method == "POST":
         return await _authorize_post(request)
 
@@ -373,6 +413,12 @@ async def _exchange_authorization_code(form: FormData) -> JSONResponse:
     client_id = str(form.get("client_id", ""))
     code_verifier = str(form.get("code_verifier", ""))
 
+    # Throttle per client_id so authorization codes / PKCE verifiers cannot be
+    # brute-forced by replaying the token endpoint (CWE-307).
+    limited = await _enforce_rate_limit("token_code", client_id or "unknown")
+    if limited is not None:
+        return limited
+
     if not code or not client_id or not code_verifier:
         return invalid_request("code, client_id, and code_verifier are required")
 
@@ -515,12 +561,9 @@ async def introspect_handler(request: Request) -> JSONResponse:
     # Rate limit per caller before any token lookup, so the route cannot be
     # hammered as a token oracle (or used to brute-force the introspection
     # credentials) even by an authenticated caller.
-    rate_key = f"introspect:{request.client.host if request.client else 'unknown'}"
-    if not await token_limiter.is_allowed(rate_key):
-        return rate_limit_exceeded(
-            "Too many introspection requests",
-            retry_after=await token_limiter.get_retry_after(rate_key),
-        )
+    limited = await _enforce_rate_limit("introspect", _client_ip(request))
+    if limited is not None:
+        return limited
 
     form = await request.form()
 
