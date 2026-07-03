@@ -6,8 +6,8 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Copy project metadata and install dependencies
-COPY pyproject.toml README.md ./
-RUN uv sync --no-dev --frozen 2>/dev/null || uv sync --no-dev
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --no-dev --frozen
 
 # Copy application code
 COPY auth_server/ auth_server/
