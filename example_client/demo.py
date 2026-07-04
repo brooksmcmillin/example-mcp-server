@@ -46,13 +46,28 @@ async def register_client(http: httpx.AsyncClient) -> tuple[str, str]:
     return data["client_id"], data["client_secret"]
 
 
+async def discover_resource(http: httpx.AsyncClient) -> str:
+    """Discover the resource server's canonical identifier (RFC 9728).
+
+    The token must be bound to the audience the resource server expects, which
+    is the ``resource`` value it advertises in its protected-resource metadata --
+    not necessarily the URL we connect to (they differ when a service is reached
+    by an internal hostname). We read that value and request it as the RFC 8707
+    ``resource`` when getting a token.
+    """
+    resp = await http.get(f"{RESOURCE_SERVER_URL}/.well-known/oauth-protected-resource")
+    resp.raise_for_status()
+    return resp.json()["resource"]
+
+
 async def get_token(
     http: httpx.AsyncClient,
     client_id: str,
     client_secret: str,
+    resource: str,
     scope: str = "notes:read notes:write",
 ) -> str:
-    """Get an access token via client_credentials grant."""
+    """Get an access token via client_credentials grant, bound to ``resource``."""
     resp = await http.post(
         f"{AUTH_SERVER_URL}/token",
         data={
@@ -60,6 +75,9 @@ async def get_token(
             "client_id": client_id,
             "client_secret": client_secret,
             "scope": scope,
+            # RFC 8707: bind the token to the resource server's audience so it
+            # passes the resource server's audience validation.
+            "resource": resource,
         },
     )
     resp.raise_for_status()
@@ -159,9 +177,11 @@ async def main() -> None:
         print(f"    client_id:     {client_id}")
         print(f"    client_secret: {client_secret[:8]}...")
 
-        # Step 2: Get token
+        # Step 2: Get token, bound to the resource server's audience (RFC 8707)
         print("\n[2] Requesting access token (client_credentials)...")
-        token = await get_token(http, client_id, client_secret)
+        resource = await discover_resource(http)
+        print(f"    resource:      {resource}")
+        token = await get_token(http, client_id, client_secret, resource)
         print(f"    access_token:  {token[:8]}...")
 
         # Step 3: Introspect token

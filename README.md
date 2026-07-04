@@ -149,6 +149,7 @@ curl -s -X POST http://localhost:9000/token \
   -d "code=AUTH_CODE" \
   -d "redirect_uri=http://127.0.0.1/callback" \
   -d "client_id=CLIENT_ID" \
+  -d "resource=http://localhost:9001/" \
   -d "code_verifier=$CODE_VERIFIER" | jq .
 ```
 
@@ -159,8 +160,18 @@ curl -s -X POST http://localhost:9000/token \
   -d "grant_type=client_credentials" \
   -d "client_id=CLIENT_ID" \
   -d "client_secret=CLIENT_SECRET" \
+  -d "resource=http://localhost:9001/" \
   -d "scope=notes:read notes:write" | jq .
 ```
+
+> **`resource` (RFC 8707) is required.** The resource server enforces audience
+> binding: it only accepts a token whose audience is its own canonical URL. Pass
+> `resource` when requesting the token so the auth server records it as the
+> token's `aud`; without it the resource server rejects the token with `401`.
+> The value is the `resource` the server advertises at
+> `http://localhost:9001/.well-known/oauth-protected-resource` (here
+> `http://localhost:9001/`). Set `VALIDATE_RESOURCE=0` on the resource server to
+> disable this enforcement.
 
 ### 3. Call MCP Tools with the Token
 
@@ -274,7 +285,8 @@ python -m example_client
 |----------|---------|-------------|
 | `AUTH_SERVER_PUBLIC_URL` | `http://localhost:9000` | Auth server URL for client-facing discovery metadata |
 | `INTROSPECTION_URL` | `{AUTH_SERVER_PUBLIC_URL}/introspect` | Token introspection endpoint (can use internal URL) |
-| `RESOURCE_SERVER_URL` | `http://localhost:9001` | Public URL of this server |
+| `RESOURCE_SERVER_URL` | `http://localhost:9001` | Public URL of this server; also the audience tokens must be bound to (RFC 8707) |
+| `VALIDATE_RESOURCE` | `1` | Enforce RFC 8707 audience binding: reject tokens whose `aud` is not this server. Set `0` to accept any active token |
 | `MCP_ALLOWED_HOSTS` | `localhost:*,127.0.0.1:*,[::1]:*` | Comma-separated `Host` header allowlist for FastMCP's DNS-rebinding protection. Add the hostname clients use to reach the server (a reverse-proxy domain, or here the Compose service name). `host:*` allows any port. |
 | `INTROSPECTION_CLIENT_ID` | `resource-server` | Client id presented to the auth server's `/introspect` endpoint. Must match the auth server's value. |
 | `INTROSPECTION_CLIENT_SECRET` | `resource-server-secret` | Secret presented to `/introspect` (HTTP Basic). Must match the auth server's value. **Override in production** |

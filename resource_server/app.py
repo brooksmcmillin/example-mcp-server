@@ -46,9 +46,16 @@ ALLOWED_HOSTS = [
 # OAuth setup
 # ---------------------------------------------------------------------------
 
+# RFC 8707: reject tokens that were not bound to this resource's audience. The
+# auth server surfaces the binding as the introspection `aud` claim; the verifier
+# checks it against this server's canonical URL. Set VALIDATE_RESOURCE=0 to fall
+# back to the pre-8707 behaviour of accepting any active token.
+VALIDATE_RESOURCE = os.environ.get("VALIDATE_RESOURCE", "1").lower() not in ("0", "false", "no")
+
 verifier = IntrospectionTokenVerifier(
     introspection_endpoint=INTROSPECTION_URL,
     server_url=RESOURCE_SERVER_URL,
+    validate_resource=VALIDATE_RESOURCE,
     client_id=INTROSPECTION_CLIENT_ID,
     client_secret=INTROSPECTION_CLIENT_SECRET,
     client_auth_method="client_secret_basic",
