@@ -95,6 +95,20 @@ def test_happy_path_issues_token(client: TestClient) -> None:
     assert body["access_token"]
 
 
+async def test_resource_is_bound_to_issued_token(client: TestClient) -> None:
+    # RFC 8707: the `resource` passed at the token endpoint is recorded on the
+    # issued token so the resource server can validate the audience.
+    client_id = _register(client)
+    code = _mint_code(client, client_id)
+    resp = _exchange(client, code=code, client_id=client_id, resource="http://localhost:9001/")
+    assert resp.status_code == 200
+    token = resp.json()["access_token"]
+    assert auth_app.storage is not None
+    stored = await auth_app.storage.load_token(token)
+    assert stored is not None
+    assert stored["resource"] == "http://localhost:9001/"
+
+
 def test_reused_code_is_rejected(client: TestClient) -> None:
     client_id = _register(client)
     code = _mint_code(client, client_id)

@@ -33,7 +33,11 @@ def _auth() -> dict[str, str]:
     return {"Authorization": f"Basic {creds}"}
 
 
-def _mint_token(client: TestClient, scope: str = "notes:read notes:write") -> tuple[str, str]:
+def _mint_token(
+    client: TestClient,
+    scope: str = "notes:read notes:write",
+    resource: str | None = None,
+) -> tuple[str, str]:
     reg = client.post(
         "/register",
         json={
@@ -45,15 +49,15 @@ def _mint_token(client: TestClient, scope: str = "notes:read notes:write") -> tu
     )
     assert reg.status_code == 201
     body = reg.json()
-    tok = client.post(
-        "/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": body["client_id"],
-            "client_secret": body["client_secret"],
-            "scope": scope,
-        },
-    )
+    form = {
+        "grant_type": "client_credentials",
+        "client_id": body["client_id"],
+        "client_secret": body["client_secret"],
+        "scope": scope,
+    }
+    if resource is not None:
+        form["resource"] = resource
+    tok = client.post("/token", data=form)
     assert tok.status_code == 200
     return body["client_id"], tok.json()["access_token"]
 
@@ -68,6 +72,24 @@ def test_valid_token_is_active_with_metadata(client: TestClient) -> None:
     assert data["scope"] == "notes:read notes:write"
     assert data["token_type"] == "bearer"
     assert isinstance(data["exp"], int)
+
+
+def test_resource_bound_token_reports_aud(client: TestClient) -> None:
+    # RFC 8707: a token requested with `resource` must introspect with a matching
+    # `aud` so the resource server can validate the audience binding.
+    _client_id, token = _mint_token(client, resource="http://localhost:9001/")
+    resp = client.post("/introspect", data={"token": token}, headers=_auth())
+    assert resp.status_code == 200
+    assert resp.json()["aud"] == "http://localhost:9001/"
+
+
+def test_unbound_token_has_no_aud(client: TestClient) -> None:
+    # Without a `resource`, the token carries no audience and introspection omits
+    # `aud` entirely (a strict resource server rejects such a token).
+    _client_id, token = _mint_token(client)
+    resp = client.post("/introspect", data={"token": token}, headers=_auth())
+    assert resp.status_code == 200
+    assert "aud" not in resp.json()
 
 
 def test_empty_token_is_inactive(client: TestClient) -> None:

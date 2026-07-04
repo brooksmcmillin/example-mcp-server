@@ -448,11 +448,16 @@ async def _exchange_authorization_code(form: FormData) -> JSONResponse:
     expires_at = int(time.time()) + TOKEN_TTL
     scopes = code_data["scopes"] if isinstance(code_data["scopes"], list) else []
 
+    # RFC 8707: bind the token to the resource the client is requesting access to
+    # so the resource server can validate the audience on introspection.
+    resource = str(form.get("resource", "")).strip() or None
+
     await storage.store_token(
         token=access_token,
         client_id=client_id,
         scopes=sorted(str(s) for s in scopes),
         expires_at=expires_at,
+        resource=resource,
     )
 
     return JSONResponse(
@@ -495,6 +500,13 @@ async def _client_credentials_grant(form: FormData) -> JSONResponse:
     else:
         scopes = allowed_scopes
 
+    # RFC 8707: bind the token to the requested resource (its audience) so the
+    # resource server can confirm the token was issued for it on introspection.
+    # ponytail: propagated as-is; a production AS would validate `resource`
+    # against a registry of known resources and return `invalid_target` for
+    # unknown values (RFC 8707 section 2.2).
+    resource = str(form.get("resource", "")).strip() or None
+
     access_token = secrets.token_urlsafe(32)
     expires_at = int(time.time()) + TOKEN_TTL
 
@@ -503,6 +515,7 @@ async def _client_credentials_grant(form: FormData) -> JSONResponse:
         client_id=client_id,
         scopes=sorted(scopes),
         expires_at=expires_at,
+        resource=resource,
     )
 
     return JSONResponse(
@@ -581,15 +594,21 @@ async def introspect_handler(request: Request) -> JSONResponse:
     if not token_data or token_data["expires_at"] < time.time():
         return JSONResponse({"active": False})
 
-    return JSONResponse(
-        {
-            "active": True,
-            "client_id": token_data["client_id"],
-            "scope": " ".join(token_data["scopes"]),
-            "exp": token_data["expires_at"],
-            "token_type": "bearer",
-        }
-    )
+    response: dict[str, str | int | list[str]] = {
+        "active": True,
+        "client_id": token_data["client_id"],
+        "scope": " ".join(token_data["scopes"]),
+        "exp": token_data["expires_at"],
+        "token_type": "bearer",
+    }
+
+    # RFC 8707: surface the resource the token was bound to as the `aud` claim so
+    # resource servers can enforce audience restriction (RFC 7662 section 2.2).
+    resource = token_data.get("resource")
+    if resource:
+        response["aud"] = resource
+
+    return JSONResponse(response)
 
 
 async def metadata_handler(request: Request) -> JSONResponse:
