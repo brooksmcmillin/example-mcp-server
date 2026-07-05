@@ -1,4 +1,8 @@
-"""Example client that demonstrates the full OAuth + MCP flow.
+"""Example client that demonstrates the client credentials OAuth + MCP flow.
+
+This exercises the machine-to-machine (client_credentials) grant end-to-end. It
+does not run the interactive authorization_code + PKCE flow used by real MCP
+clients; see the README for that path.
 
 Usage:
     python -m example_client.demo
