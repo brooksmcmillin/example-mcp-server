@@ -6,7 +6,7 @@ A complete, runnable example of an OAuth-protected [MCP](https://modelcontextpro
 
 - **Auth server** — OAuth 2.0 authorization server with client registration, authorization code + PKCE, client credentials, and token introspection
 - **Resource server** — MCP server exposing a notes CRUD API, protected by OAuth tokens
-- **Example client** — Python script demonstrating the full flow end-to-end
+- **Example client** — Python script demonstrating the client credentials (machine-to-machine) flow end-to-end
 
 ## Quick Start
 
@@ -193,11 +193,19 @@ curl -s -X POST http://localhost:9001/mcp \
 
 Returns `401 Unauthorized`.
 
-### 5. Run the Full Demo
+### 5. Run the Client Credentials Demo
 
 ```bash
 docker compose --profile demo run --rm example-client
 ```
+
+This script registers a client, obtains a token via the **client credentials**
+(machine-to-machine) grant, calls the MCP tools, and demonstrates rejection
+without valid credentials. It does not exercise the interactive
+authorization_code + PKCE flow — for that, use a real MCP client (see
+[Using with MCP Clients](#using-with-mcp-clients)) or follow the manual
+[authorization_code + PKCE steps](#2a-get-a-token-authorization-code--pkce)
+above.
 
 ## Architecture
 
