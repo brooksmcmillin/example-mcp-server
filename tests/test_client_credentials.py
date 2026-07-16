@@ -90,6 +90,26 @@ def test_scope_outside_allowed_is_invalid_scope(client: TestClient) -> None:
     assert resp.json()["error"] == "invalid_scope"
 
 
+def test_grant_not_registered_is_unauthorized_client(client: TestClient) -> None:
+    # A confidential client registered only for authorization_code must not be
+    # able to redeem its credentials via the client_credentials grant.
+    resp = client.post(
+        "/register",
+        json={
+            "client_name": "Auth-Code Only",
+            "scope": "notes:read",
+            "grant_types": ["authorization_code"],
+            "redirect_uris": ["https://app.example.com/callback"],
+            "token_endpoint_auth_method": "client_secret_post",
+        },
+    )
+    assert resp.status_code == 201
+    reg = resp.json()
+    grant = _grant(client, client_id=reg["client_id"], client_secret=reg["client_secret"])
+    assert grant.status_code == 400
+    assert grant.json()["error"] == "unauthorized_client"
+
+
 def test_rate_limit_exceeded_returns_retry_after(client: TestClient) -> None:
     auth_app.token_limiter = SlidingWindowRateLimiter(requests_per_window=2, window_seconds=300)
     reg = _register_confidential(client)

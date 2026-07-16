@@ -15,7 +15,7 @@ import os
 import secrets
 import time
 import urllib.parse
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -26,6 +26,7 @@ from mcp_authflow import (
     invalid_client,
     invalid_request,
     invalid_scope,
+    oauth_error,
     rate_limit_exceeded,
 )
 from starlette.applications import Starlette
@@ -389,6 +390,17 @@ async def _authorize_post(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
+def unauthorized_client(description: str) -> JSONResponse:
+    """RFC 6749 section 5.2: client is not authorized for the requested grant."""
+    return oauth_error("unauthorized_client", description, 400)
+
+
+def _client_allows_grant(client: Mapping[str, object], grant_type: str) -> bool:
+    """True if ``grant_type`` is among the client's registered grant_types."""
+    grant_types = client.get("grant_types")
+    return isinstance(grant_types, list) and grant_type in grant_types
+
+
 async def token_handler(request: Request) -> JSONResponse:
     """RFC 6749: Token endpoint (authorization_code + client_credentials)."""
     assert storage is not None
@@ -432,6 +444,14 @@ async def _exchange_authorization_code(form: FormData) -> JSONResponse:
 
     if code_data["client_id"] != client_id:
         return invalid_client("client_id mismatch")
+
+    # Enforce the client's registered grant_types (RFC 6749 section 3.2.1): a
+    # client may only redeem a code if it registered for authorization_code.
+    client = registered_clients.get(client_id)
+    if client is None:
+        return invalid_client("Unknown client_id")
+    if not _client_allows_grant(client, "authorization_code"):
+        return unauthorized_client("Client is not registered for the authorization_code grant")
 
     if code_data["redirect_uri"] != redirect_uri:
         return invalid_request("redirect_uri mismatch")
@@ -490,6 +510,10 @@ async def _client_credentials_grant(form: FormData) -> JSONResponse:
         str(client.get("client_secret", "")), client_secret
     ):
         return invalid_client("Invalid client credentials")
+
+    # Enforce the client's registered grant_types (RFC 6749 section 3.2.1).
+    if not _client_allows_grant(client, "client_credentials"):
+        return unauthorized_client("Client is not registered for the client_credentials grant")
 
     requested_scope = str(form.get("scope", ""))
     allowed_scopes = set(client["scopes"]) if isinstance(client["scopes"], list) else set()

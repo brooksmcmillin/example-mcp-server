@@ -157,6 +157,26 @@ def test_bad_code_verifier_is_rejected(client: TestClient) -> None:
     assert resp.json()["error"] == "invalid_request"
 
 
+def test_grant_not_registered_is_unauthorized_client(client: TestClient) -> None:
+    # A client that only registered for client_credentials must not be able to
+    # redeem an authorization code, even after minting one.
+    resp = client.post(
+        "/register",
+        json={
+            "client_name": "Client-Creds Only",
+            "redirect_uris": [REDIRECT_URI],
+            "scope": "notes:read notes:write",
+            "grant_types": ["client_credentials"],
+        },
+    )
+    assert resp.status_code == 201
+    client_id = resp.json()["client_id"]
+    code = _mint_code(client, client_id)
+    result = _exchange(client, code=code, client_id=client_id)
+    assert result.status_code == 400
+    assert result.json()["error"] == "unauthorized_client"
+
+
 def test_missing_fields_are_rejected(client: TestClient) -> None:
     client_id = _register(client)
     code = _mint_code(client, client_id)
