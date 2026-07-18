@@ -450,6 +450,19 @@ async def _exchange_authorization_code(form: FormData) -> JSONResponse:
     client = registered_clients.get(client_id)
     if client is None:
         return invalid_client("Unknown client_id")
+
+    # RFC 6749 section 4.1.3: a confidential client must authenticate at the
+    # token endpoint. If the client registered with an auth method other than
+    # "none", require its client_secret and compare it in constant time,
+    # mirroring _client_credentials_grant(). PKCE alone does not satisfy client
+    # authentication for confidential clients.
+    if client.get("token_endpoint_auth_method", "none") != "none":
+        client_secret = str(form.get("client_secret", ""))
+        if not client_secret or not secrets.compare_digest(
+            str(client.get("client_secret", "")), client_secret
+        ):
+            return invalid_client("Invalid client credentials")
+
     if not _client_allows_grant(client, "authorization_code"):
         return unauthorized_client("Client is not registered for the authorization_code grant")
 
