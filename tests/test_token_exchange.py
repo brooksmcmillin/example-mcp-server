@@ -48,6 +48,22 @@ def _register(client: TestClient) -> str:
     return resp.json()["client_id"]
 
 
+def _register_confidential(client: TestClient) -> tuple[str, str]:
+    """Register a confidential client and return its (client_id, client_secret)."""
+    resp = client.post(
+        "/register",
+        json={
+            "client_name": "Confidential Exchange Client",
+            "redirect_uris": [REDIRECT_URI],
+            "scope": "notes:read notes:write",
+            "token_endpoint_auth_method": "client_secret_post",
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    return body["client_id"], body["client_secret"]
+
+
 def _mint_code(client: TestClient, client_id: str) -> str:
     """Drive the consent GET+POST round-trip and return a fresh authorization code."""
     params = {
@@ -175,6 +191,46 @@ def test_grant_not_registered_is_unauthorized_client(client: TestClient) -> None
     result = _exchange(client, code=code, client_id=client_id)
     assert result.status_code == 400
     assert result.json()["error"] == "unauthorized_client"
+
+
+def test_confidential_client_with_valid_secret_succeeds(client: TestClient) -> None:
+    # RFC 6749 section 4.1.3: a confidential client authenticates with its
+    # client_secret at the token endpoint; a valid secret still issues a token.
+    client_id, client_secret = _register_confidential(client)
+    code = _mint_code(client, client_id)
+    resp = _exchange(client, code=code, client_id=client_id, client_secret=client_secret)
+    assert resp.status_code == 200
+    assert resp.json()["access_token"]
+
+
+def test_confidential_client_missing_secret_is_rejected(client: TestClient) -> None:
+    # A confidential client that omits its secret must be rejected even though
+    # the PKCE verifier is correct.
+    client_id, _ = _register_confidential(client)
+    code = _mint_code(client, client_id)
+    resp = _exchange(client, code=code, client_id=client_id)
+    assert resp.status_code == 401
+    assert resp.json()["error"] == "invalid_client"
+
+
+def test_confidential_client_wrong_secret_is_rejected(client: TestClient) -> None:
+    client_id, _ = _register_confidential(client)
+    code = _mint_code(client, client_id)
+    resp = _exchange(
+        client, code=code, client_id=client_id, client_secret="the-wrong-secret-entirely"
+    )
+    assert resp.status_code == 401
+    assert resp.json()["error"] == "invalid_client"
+
+
+def test_public_client_ignores_client_secret(client: TestClient) -> None:
+    # A public client (auth method "none") is not required to send a secret, and
+    # a stray secret must not block the exchange.
+    client_id = _register(client)
+    code = _mint_code(client, client_id)
+    resp = _exchange(client, code=code, client_id=client_id, client_secret="unexpected")
+    assert resp.status_code == 200
+    assert resp.json()["access_token"]
 
 
 def test_missing_fields_are_rejected(client: TestClient) -> None:
