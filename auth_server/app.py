@@ -73,6 +73,28 @@ CSRF_TOKEN_TTL = 600  # 10 minutes
 token_limiter = SlidingWindowRateLimiter(requests_per_window=60, window_seconds=300)
 
 
+def sweep_expired_entries(now: float | None = None) -> None:
+    """Drop expired consent CSRF tokens and authorization codes.
+
+    Both dicts are otherwise only shrunk by ``pop()`` on successful use, so
+    abandoned/denied consent forms and unredeemed codes would accumulate for
+    the lifetime of the process (CWE-401 / CWE-772). Called opportunistically
+    from the authorization endpoint -- the only place either dict grows -- so
+    each dict stays bounded by the traffic the rate limiter admits within one
+    TTL window.
+    """
+    if now is None:
+        now = time.time()
+    expired_tokens = [token for token, expiry in consent_csrf_tokens.items() if expiry < now]
+    for token in expired_tokens:
+        consent_csrf_tokens.pop(token, None)
+    expired_codes = [
+        code for code, data in authorization_codes.items() if cast(int, data["expires_at"]) < now
+    ]
+    for code in expired_codes:
+        authorization_codes.pop(code, None)
+
+
 # ---------------------------------------------------------------------------
 # Rate-limiting helpers
 # ---------------------------------------------------------------------------
@@ -264,6 +286,11 @@ async def authorize_handler(request: Request) -> Response:
     limited = await _enforce_rate_limit("authorize", _client_ip(request))
     if limited is not None:
         return limited
+
+    # Prune expired CSRF tokens and authorization codes before this request
+    # potentially mints new ones, so abandoned flows cannot grow the
+    # in-memory registries without bound.
+    sweep_expired_entries()
 
     if request.method == "POST":
         return await _authorize_post(request)
