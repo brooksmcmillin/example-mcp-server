@@ -79,6 +79,21 @@ def test_happy_path_issues_code(client: TestClient) -> None:
     assert auth_app.authorization_codes[code]["scopes"] == ["notes:read"]
 
 
+def test_deny_redirects_with_access_denied_and_no_code(client: TestClient) -> None:
+    """Denying consent must redirect with error=access_denied and mint no code."""
+    client_id = _register(client)
+    form = _consent_form(client, client_id, action="deny")
+    resp = client.post("/authorize", data=form, follow_redirects=False)
+    assert resp.status_code == 302
+    location = resp.headers["location"]
+    assert location.startswith("https://app.example.com/callback?")
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(location).query)
+    assert query["error"] == ["access_denied"]
+    assert query["state"] == ["xyz"]
+    assert "code" not in query
+    assert auth_app.authorization_codes == {}
+
+
 def test_post_without_csrf_is_rejected(client: TestClient) -> None:
     """A direct POST (no GET, no CSRF token) must not mint a code."""
     client_id = _register(client)
