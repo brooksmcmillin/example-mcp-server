@@ -132,6 +132,29 @@ def test_unknown_client_is_rejected(client: TestClient) -> None:
     assert auth_app.authorization_codes == {}
 
 
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"code_challenge": ""},
+        {"code_challenge_method": "plain"},
+    ],
+    ids=["no_challenge", "plain_method"],
+)
+def test_post_re_checks_pkce_s256(client: TestClient, overrides: dict[str, str]) -> None:
+    """Defense in depth: the GET check is not enough, form fields are attacker-set.
+
+    A code minted without an S256 challenge could later be redeemed with no
+    proof of possession, so the POST handler re-validates PKCE itself.
+    """
+    client_id = _register(client)
+    form = _consent_form(client, client_id, **overrides)
+    resp = client.post("/authorize", data=form, follow_redirects=False)
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "invalid_request"
+    assert "location" not in resp.headers
+    assert auth_app.authorization_codes == {}
+
+
 def test_scope_escalation_is_constrained(client: TestClient) -> None:
     """A read-only client must not be able to POST itself notes:write."""
     resp = client.post(
