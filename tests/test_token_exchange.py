@@ -239,3 +239,13 @@ def test_missing_fields_are_rejected(client: TestClient) -> None:
     resp = _exchange(client, code=code, client_id=client_id, code_verifier="")
     assert resp.status_code == 400
     assert resp.json()["error"] == "invalid_request"
+
+
+@pytest.mark.parametrize("grant_type", ["", "password", "refresh_token"])
+def test_unsupported_grant_type_is_rejected(client: TestClient, grant_type: str) -> None:
+    """Only authorization_code and client_credentials are dispatched."""
+    resp = client.post("/token", data={"grant_type": grant_type})
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error"] == "invalid_request"
+    assert "grant_type" in body["error_description"]

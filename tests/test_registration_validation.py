@@ -86,7 +86,76 @@ def test_register_invalid_json_body(client: TestClient) -> None:
     assert resp.json()["error"] == "invalid_request"
 
 
+# --- register_handler input normalization ------------------------------------
+
+
+def test_register_normalizes_bare_string_grant_types(client: TestClient) -> None:
+    """RFC 7591 says ``grant_types`` is an array, but tolerate a bare string."""
+    resp = client.post(
+        "/register",
+        json={
+            "client_name": "App",
+            "grant_types": "authorization_code",
+            "redirect_uris": [REDIRECT_URI],
+            "scope": "notes:read",
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["grant_types"] == ["authorization_code"]
+    # The wrapped value must also drive the derived defaults and the registry,
+    # so a later token request passes the registered-grant check.
+    assert body["response_types"] == ["code"]
+    assert auth_app.registered_clients[body["client_id"]]["grant_types"] == ["authorization_code"]
+
+
+def test_register_normalizes_list_form_scope(client: TestClient) -> None:
+    """A list-form ``scope`` is joined into the space-delimited RFC 6749 form."""
+    resp = client.post(
+        "/register",
+        json={
+            "client_name": "App",
+            "redirect_uris": [REDIRECT_URI],
+            "scope": ["notes:write", "notes:read"],
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["scope"] == "notes:read notes:write"
+    assert auth_app.registered_clients[body["client_id"]]["scopes"] == [
+        "notes:read",
+        "notes:write",
+    ]
+
+
+def test_register_list_form_scope_still_validated(client: TestClient) -> None:
+    """Normalization must not bypass the unknown-scope check."""
+    resp = client.post(
+        "/register",
+        json={
+            "client_name": "App",
+            "redirect_uris": [REDIRECT_URI],
+            "scope": ["notes:read", "notes:admin"],
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "invalid_scope"
+
+
 # --- authorize GET validation -------------------------------------------------
+
+
+def test_authorize_missing_client_id(client: TestClient) -> None:
+    resp = _authorize_get(client)
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "invalid_request"
+
+
+def test_authorize_missing_redirect_uri(client: TestClient) -> None:
+    client_id = _register(client)
+    resp = _authorize_get(client, client_id=client_id, redirect_uri="")
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "invalid_request"
 
 
 def test_authorize_unknown_client_id(client: TestClient) -> None:
