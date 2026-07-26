@@ -93,6 +93,49 @@ def test_authorize_limit_is_namespaced_from_register(client: TestClient) -> None
     assert client.get("/authorize", params=params).status_code != 429
 
 
+def test_client_credentials_limit_is_namespaced_from_authorization_code(
+    client: TestClient,
+) -> None:
+    """The client_credentials grant keys the limiter like every other endpoint.
+
+    It used to inline the limiter call with a bare ``client_id`` key, giving that
+    grant an un-namespaced bucket. Exhausting one grant's budget must not spill
+    over into the other for the same client.
+    """
+    reg = client.post(
+        "/register",
+        json={
+            "client_name": "Machine Client",
+            "scope": "notes:read",
+            "grant_types": ["client_credentials"],
+            "token_endpoint_auth_method": "client_secret_post",
+        },
+    )
+    assert reg.status_code == 201
+    creds = reg.json()
+    cc_form = {
+        "grant_type": "client_credentials",
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+    }
+    # Exhaust the client_credentials budget for this client.
+    assert client.post("/token", data=cc_form).status_code == 200
+    assert client.post("/token", data=cc_form).status_code == 200
+    assert client.post("/token", data=cc_form).status_code == 429
+    # The authorization_code path for the same client_id has its own budget.
+    code_resp = client.post(
+        "/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": "nope",
+            "redirect_uri": "https://app.example.com/callback",
+            "client_id": creds["client_id"],
+            "code_verifier": "verifier",
+        },
+    )
+    assert code_resp.status_code != 429
+
+
 def test_authorize_happy_path_within_budget(client: TestClient) -> None:
     """A normal consent round-trip (GET then POST) fits in a 2-request budget."""
     auth_app.token_limiter = SlidingWindowRateLimiter(requests_per_window=2, window_seconds=300)

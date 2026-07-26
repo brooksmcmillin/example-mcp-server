@@ -539,11 +539,11 @@ async def _client_credentials_grant(form: FormData) -> JSONResponse:
     if not client_id or not client_secret:
         return invalid_client("client_id and client_secret are required")
 
-    if not await token_limiter.is_allowed(client_id):
-        return rate_limit_exceeded(
-            "Too many token requests",
-            retry_after=await token_limiter.get_retry_after(client_id),
-        )
+    # Throttle per client_id so client secrets cannot be brute-forced by
+    # replaying the token endpoint (CWE-307).
+    limited = await _enforce_rate_limit("token_cc", client_id)
+    if limited is not None:
+        return limited
 
     client = registered_clients.get(client_id)
     if not client or not secrets.compare_digest(
