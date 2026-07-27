@@ -326,7 +326,7 @@ async def authorize_handler(request: Request) -> Response:
         return invalid_request("redirect_uri not registered for this client")
 
     client_name = str(client.get("client_name", client_id))
-    allowed_scopes = set(client["scopes"]) if isinstance(client["scopes"], list) else set()
+    allowed_scopes = _client_scopes(client)
     requested_scopes = set(scope.split()) if scope else allowed_scopes
     scopes = sorted(requested_scopes & allowed_scopes) or sorted(allowed_scopes)
 
@@ -394,8 +394,7 @@ async def _authorize_post(request: Request) -> Response:
         return RedirectResponse(f"{redirect_uri}?{qs}", status_code=302)
 
     # Constrain granted scopes to the intersection of requested and allowed.
-    allowed_scopes = set(client["scopes"]) if isinstance(client["scopes"], list) else set()
-    granted_scopes = sorted(set(scope.split()) & allowed_scopes)
+    granted_scopes = sorted(set(scope.split()) & _client_scopes(client))
 
     # Generate single-use authorization code
     code = secrets.token_urlsafe(32)
@@ -426,6 +425,47 @@ def _client_allows_grant(client: Mapping[str, object], grant_type: str) -> bool:
     """True if ``grant_type`` is among the client's registered grant_types."""
     grant_types = client.get("grant_types")
     return isinstance(grant_types, list) and grant_type in grant_types
+
+
+def _client_scopes(client: Mapping[str, object]) -> set[str]:
+    """The scopes a client registered for, as a set.
+
+    ``registered_clients`` is a loosely-typed dict, so the stored value is
+    narrowed here rather than at every call site.
+    """
+    scopes = client.get("scopes")
+    return {str(s) for s in scopes} if isinstance(scopes, list) else set()
+
+
+async def _issue_access_token(
+    client_id: str, scopes: set[str] | list[str], resource: str | None
+) -> JSONResponse:
+    """Mint, store and serialize an access token (RFC 6749 section 5.1).
+
+    Shared by both grants so they cannot drift apart in TTL, storage or
+    response shape.
+    """
+    assert storage is not None
+
+    access_token = secrets.token_urlsafe(32)
+    granted = sorted(str(s) for s in scopes)
+
+    await storage.store_token(
+        token=access_token,
+        client_id=client_id,
+        scopes=granted,
+        expires_at=int(time.time()) + TOKEN_TTL,
+        resource=resource,
+    )
+
+    return JSONResponse(
+        {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": TOKEN_TTL,
+            "scope": " ".join(granted),
+        }
+    )
 
 
 async def token_handler(request: Request) -> JSONResponse:
@@ -504,30 +544,13 @@ async def _exchange_authorization_code(form: FormData) -> JSONResponse:
         return invalid_request("PKCE verification failed")
 
     # Issue token
-    access_token = secrets.token_urlsafe(32)
-    expires_at = int(time.time()) + TOKEN_TTL
     scopes = code_data["scopes"] if isinstance(code_data["scopes"], list) else []
 
     # RFC 8707: bind the token to the resource the client is requesting access to
     # so the resource server can validate the audience on introspection.
     resource = str(form.get("resource", "")).strip() or None
 
-    await storage.store_token(
-        token=access_token,
-        client_id=client_id,
-        scopes=sorted(str(s) for s in scopes),
-        expires_at=expires_at,
-        resource=resource,
-    )
-
-    return JSONResponse(
-        {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "expires_in": TOKEN_TTL,
-            "scope": " ".join(sorted(str(s) for s in scopes)),
-        }
-    )
+    return await _issue_access_token(client_id, scopes, resource)
 
 
 async def _client_credentials_grant(form: FormData) -> JSONResponse:
@@ -556,7 +579,7 @@ async def _client_credentials_grant(form: FormData) -> JSONResponse:
         return unauthorized_client("Client is not registered for the client_credentials grant")
 
     requested_scope = str(form.get("scope", ""))
-    allowed_scopes = set(client["scopes"]) if isinstance(client["scopes"], list) else set()
+    allowed_scopes = _client_scopes(client)
     if requested_scope:
         scopes = set(requested_scope.split())
         if not scopes.issubset(allowed_scopes):
@@ -571,25 +594,7 @@ async def _client_credentials_grant(form: FormData) -> JSONResponse:
     # unknown values (RFC 8707 section 2.2).
     resource = str(form.get("resource", "")).strip() or None
 
-    access_token = secrets.token_urlsafe(32)
-    expires_at = int(time.time()) + TOKEN_TTL
-
-    await storage.store_token(
-        token=access_token,
-        client_id=client_id,
-        scopes=sorted(scopes),
-        expires_at=expires_at,
-        resource=resource,
-    )
-
-    return JSONResponse(
-        {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "expires_in": TOKEN_TTL,
-            "scope": " ".join(sorted(scopes)),
-        }
-    )
+    return await _issue_access_token(client_id, scopes, resource)
 
 
 # ---------------------------------------------------------------------------
