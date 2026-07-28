@@ -589,7 +589,7 @@ async def _client_credentials_grant(form: FormData) -> JSONResponse:
 
     # RFC 8707: bind the token to the requested resource (its audience) so the
     # resource server can confirm the token was issued for it on introspection.
-    # ponytail: propagated as-is; a production AS would validate `resource`
+    # Propagated as-is; a production AS would validate `resource`
     # against a registry of known resources and return `invalid_target` for
     # unknown values (RFC 8707 section 2.2).
     resource = str(form.get("resource", "")).strip() or None
