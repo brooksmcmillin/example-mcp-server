@@ -245,10 +245,16 @@ above.
 | Method | Path | RFC | Description |
 |--------|------|-----|-------------|
 | GET | `/.well-known/oauth-authorization-server` | 8414 | Server metadata |
+| GET | `/.well-known/openid-configuration` | 8414 | Alias of the server-metadata endpoint above |
 | POST | `/register` | 7591 | Dynamic client registration |
 | GET/POST | `/authorize` | 6749 | Authorization endpoint (consent page) |
 | POST | `/token` | 6749 | Token endpoint (auth code + client credentials) |
 | POST | `/introspect` | 7662 | Token introspection (authenticates the caller; rate limited) |
+
+`/.well-known/openid-configuration` is a convenience alias for clients that only
+probe the OIDC discovery path. It returns the same RFC 8414 OAuth authorization
+server metadata — this server is not an OpenID Provider and does not issue ID
+tokens or implement OIDC discovery.
 
 ## MCP Tools (Resource Server)
 
